@@ -226,4 +226,16 @@ function getDistancesToFinal()  {
   })
 }
 
-modifyDistanceData()
+let countasd = 0;
+function countToNumber() {
+  data2.forEach(function (item) {
+    item.count = Number(item.count);
+    countasd += item.count;
+  })
+
+  setTimeout(function () {
+    console.log(countasd)
+  }, 2000)
+}
+
+countToNumber()
