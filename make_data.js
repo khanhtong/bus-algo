@@ -1,14 +1,14 @@
 const xlsxj = require("xlsx-to-json-lc");
 const data = require('./output.json');
 const fs = require('fs');
-const apiKey = 'AIzaSyAZ8i2grIbRQoogjZEhztP438Qz8NlOpVM';
+const apiKey = 'AIzaSyArUumLPWqO9BG0sh-22fr-9kWPxU5oLPM';
 const axios = require('axios');
 const async = require('async');
 const _ = require('lodash');
 const limitDestinations = 25;
 let data2 = require('./data/finalData.json');
 // const errorData = require('./data/errorDistances.json')
-const timeout = 1000;
+const timeout = 2000;
 const vinPoint = '21.034453, 105.760553';
 
 function excelToJson() {
@@ -19,7 +19,7 @@ function excelToJson() {
     if (err) {
       console.error(err);
     } else {
-      console.log(result);
+      console.log(JSON.stringify(result));
     }
   });
 }
@@ -41,38 +41,31 @@ function modifyData() {
   })
 }
 
-function getLatLong(path) {
-  if (path) {
-    let data = require('./data/fileRemoveTotal.json')
-    let newData = [];
-    let errData = [];
+function getLatLong() {
+  let data = require('./data/fileRemoveTotal.json')
+  let newData = [];
+  let errData = [];
 
-    async.each(data, function (item, callback) {
-      let url = 'https://maps.googleapis.com/maps/api/geocode/json?address=' + encodeURIComponent(item.place + ' Hà Nội') + '&key=' + apiKey;
-      console.log(url)
-      axios.get(url).then((data) => {
-        console.log(JSON.stringify(data.data))
-        item.geo = data.data;
-        newData.push(item);
-        callback()
-      }).catch((error) => {
-        if (error) {
-          console.log('error: ', JSON.stringify(error.data))
-          errData.push(errData);
-          callback()
-        }
-      });
-    }, function (err) {
-      if (err) {
-        console.log('A file failed to process');
-      } else {
-        saveData([
-          {name: 'geoSuccess.json', data: data},
-          {name: 'geoError.json', data: errData}
-        ])
+  async.each(data, function (item, callback) {
+    let url = 'https://maps.googleapis.com/maps/api/geocode/json?address=' + encodeURIComponent(item.place + ' Hà Nội') + '&key=' + apiKey;
+    console.log(url);
+    axios.get(url).then((res) => {
+      if (res.data.status === 'OVER_QUERY_LIMIT') {
+        res.data.url = url;
       }
+      item.geo = res.data;
+      newData.push(item);
+      callback()
     });
-  }
+  }, function (err) {
+    if (err) {
+      console.log('A file failed to process');
+    } else {
+      saveData([
+        {name: 'geoSuccess.json', data: data}
+      ])
+    }
+  });
 }
 
 function saveData(files) {
@@ -91,6 +84,9 @@ function getDestinations(list) {
   let result = '';
   let listCode = [];
   for (let i = 0; i < list.length; i++) {
+    if (!list[i].geo) {
+      console.log(list)
+    }
     result = result + list[i].geo.results[0].geometry.location.lat + ', ' + list[i].geo.results[0].geometry.location.lng + ' | ';
     listCode.push(list[i].code)
   }
@@ -167,7 +163,7 @@ function checkErrReq() {
       }, function () {
         result.forEach(function (item) {
           console.log(item.status)
-        })
+        });
         saveData([{name: '/distances_edit/' + i + '.json', data: result}])
       })
     }, timeout * i)
@@ -204,7 +200,7 @@ function modifyDistanceData() {
   }
 }
 
-function getDistancesToFinal()  {
+function getDistancesToFinal() {
   async.eachOf(data2, function (item, index, callback) {
     let origin = item.geo.results[0].geometry.location.lat + ', ' + item.geo.results[0].geometry.location.lng;
     let url = 'https://maps.googleapis.com/maps/api/distancematrix/json?origins=' + encodeURIComponent(origin) + '&destinations=' + encodeURIComponent(vinPoint) + '&key=' + apiKey + '&transit_mode=bus';
@@ -226,16 +222,4 @@ function getDistancesToFinal()  {
   })
 }
 
-let countasd = 0;
-function countToNumber() {
-  data2.forEach(function (item) {
-    item.count = Number(item.count);
-    countasd += item.count;
-  })
-
-  setTimeout(function () {
-    console.log(countasd)
-  }, 2000)
-}
-
-countToNumber()
+modifyDistanceData();

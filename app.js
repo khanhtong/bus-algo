@@ -1,8 +1,9 @@
 const fs = require('fs');
 const _ = require('lodash');
-const data = require('./data/test.json');
+const data = require('./data/finalData.json');
 const buses = [29, 16, 7];
 const maxTime = 3600;
+const bufferTime = 20/100;
 
 // sort theo khoang cach lon nhat
 let input = _.sortBy(data, [function (o) {
@@ -49,7 +50,7 @@ while (input.length > donePlace.length) {
       geo: lastPlace.geo.results[0].formatted_address,
       count: lastPlace.count
     });
-    route.count += lastPlace.count
+    route.count += lastPlace.count;
     bus -= lastPlace.count;
     donePlace.push(lastPlace.code);
     donePlaceChild.push(lastPlace.code)
@@ -67,7 +68,7 @@ while (input.length > donePlace.length) {
 
     // xoa nhung dia diem da dc su dung
     for (let i = 0; i < distancesLength; i++) {
-      if (donePlace.indexOf(distances.elements[i].code) === -1 && donePlaceChild.indexOf(distances.elements[i].code) === -1 && distances.elements[i].code !== 143) {
+      if (donePlace.indexOf(distances.elements[i].code) === -1 && donePlaceChild.indexOf(distances.elements[i].code) === -1) {
         distancesRaw.push(distances.elements[i])
       }
     }
@@ -82,40 +83,41 @@ while (input.length > donePlace.length) {
       let nearestPlaceRaw = _.find(inputRaw, function (o) {
         return o.code === nearestPlace.code;
       });
-
-      if (!nearestPlaceRaw) {
-        console.log(nearestPlaceRaw)
-        console.log(nearestPlace)
-        console.log(JSON.stringify(inputRaw))
-      }
+      nearestPlace.element.duration.value += nearestPlace.element.duration.value * bufferTime;
+      nearestPlaceRaw.element.rows[0].elements[0].duration.value += nearestPlaceRaw.element.rows[0].elements[0].duration.value * bufferTime;
       // kiem tra thoi gian tong < thoi gian yeu cau
       let newTime = route.duration
         + nearestPlace.element.duration.value
-        + nearestPlace.element.duration.value*20/100
-        + nearestPlaceRaw.element.rows[0].elements[0].duration.value
-        + nearestPlaceRaw.element.rows[0].elements[0].duration.value*20/100;
+        + nearestPlaceRaw.element.rows[0].elements[0].duration.value;
       if (newTime < maxTime) {
         route.child.push(nearestPlace);
         route.duration += nearestPlace.element.duration.value;
         route.distance += nearestPlace.element.distance.value;
 
         donePlaceChild.push(nearestPlaceRaw.code);
-        route.element.push({
-          place: nearestPlaceRaw.place,
-          index: nearestPlaceRaw.code,
-          geo: nearestPlaceRaw.geo.results[0].formatted_address,
-          count: nearestPlaceRaw.count
-        });
-        route.count += nearestPlaceRaw.count;
         // so luong nguoi tai diem nho hon so ghe con lai cua xe
         if (bus >= nearestPlaceRaw.count) {
+          route.count += nearestPlaceRaw.count;
           bus -= nearestPlaceRaw.count;
           donePlace.push(nearestPlaceRaw.code);
+          route.element.push({
+            place: nearestPlaceRaw.place,
+            index: nearestPlaceRaw.code,
+            geo: nearestPlaceRaw.geo.results[0].formatted_address,
+            count: nearestPlaceRaw.count
+          });
         }
         else {
           nearestPlaceRaw.count -= bus;
+          route.count += bus;
+          donePlaceChild.push(nearestPlaceRaw.code);
+          route.element.push({
+            place: nearestPlaceRaw.place,
+            index: nearestPlaceRaw.code,
+            geo: nearestPlaceRaw.geo.results[0].formatted_address,
+            count: bus
+          });
           bus = 0;
-          donePlaceChild.push(nearestPlaceRaw.code)
         }
 
       }
@@ -127,18 +129,29 @@ while (input.length > donePlace.length) {
       breakPoint = true;
     }
   }
+  if (route.count <= buses[0]) {
+    route.type = 0;
+  }
   if (route.count <= buses[1]) {
-    route.bus = 1;
+    route.type = 1;
   }
   if (route.count <= buses[2]) {
-    route.bus = 2;
+    route.type = 2;
   }
+  route.bus = buses[route.type] - route.count;
   let lastItem = _.last(route.element);
   let lastItemRaw = _.find(input, function (o) {
     return o.code === lastItem.index
   });
   route.distance += lastItemRaw.element.rows[0].elements[0].distance.value;
   route.duration += lastItemRaw.element.rows[0].elements[0].duration.value;
+  route.child.push({
+    destination: lastItemRaw.element.destination_addresses[0],
+    element: {
+      distance: lastItemRaw.element.rows[0].elements[0].distance,
+      duration: lastItemRaw.element.rows[0].elements[0].duration
+    }
+  });
   output.push(route)
 }
 
@@ -150,20 +163,21 @@ let a = {
   "0": 0,
   "1": 0,
   "2": 0
-}
-for (let i = 0; i<output.length; i++) {
-  if (output[i].bus === 0) {
-    a["0"] ++
+};
+
+for (let i = 0; i < output.length; i++) {
+  if (output[i].type === 0) {
+    a["0"]++
   }
-  if (output[i].bus ===  1) {
-    a["1"] ++
+  if (output[i].type === 1) {
+    a["1"]++
   }
-  if (output[i].bus === 2) {
-    a["2"] ++
+  if (output[i].type === 2) {
+    a["2"]++
   }
 }
 
-console.log(a)
+console.log(a);
 // let countAll = 0;
 // output.forEach((item) => {
 //   countAll += item.count;
