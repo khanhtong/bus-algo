@@ -1,19 +1,18 @@
 const xlsxj = require("xlsx-to-json-lc");
-const data = require('./output.json');
 const fs = require('fs');
-const apiKey = 'AIzaSyArUumLPWqO9BG0sh-22fr-9kWPxU5oLPM';
+// const apiKey = 'AIzaSyArUumLPWqO9BG0sh-22fr-9kWPxU5oLPM';
+const apiKey = 'AIzaSyDr4ZWyxkvELBHIB5RnTBXKJFZ2A2jjt5I';
 const axios = require('axios');
-const async = require('async');
-const _ = require('lodash');
+ const _ = require('lodash');
 const limitDestinations = 25;
 let data2 = require('./data/finalData.json');
-// const errorData = require('./data/errorDistances.json')
-const timeout = 2000;
-const vinPoint = '21.034453, 105.760553';
+const timeout = 100;
+const vinPoint = '20.993812, 105.866591';
+const async = require('async');
 
 function excelToJson() {
   xlsxj({
-    input: "./place_raw.xlsx",
+    input: "./input_timeCity.xls",
     output: "output.json"
   }, function (err, result) {
     if (err) {
@@ -42,7 +41,7 @@ function modifyData() {
 }
 
 function getLatLong() {
-  let data = require('./data/fileRemoveTotal.json')
+  let data = require('./output.json')
   let newData = [];
   let errData = [];
 
@@ -68,6 +67,37 @@ function getLatLong() {
   });
 }
 
+function checkErrLatLong() {
+  let data = require('./data/geoSuccess.json');
+  let newData = [];
+
+  async.each(data, function (item, callback) {
+    if (item.geo.status === 'OVER_QUERY_LIMIT') {
+      console.log('edit data');
+      axios.get(item.geo.url).then((res) => {
+        if (res.data.status === 'OVER_QUERY_LIMIT') {
+          res.data.url = item.geo.url;
+        }
+        item.geo = res.data;
+        newData.push(item);
+        callback()
+      });
+    }
+    else {
+      newData.push(item);
+      callback();
+    }
+  }, function (err) {
+    if (err) {
+      console.log('A file failed to process');
+    } else {
+      saveData([
+        {name: 'geoSuccess.json', data: newData}
+      ])
+    }
+  });
+}
+
 function saveData(files) {
   files.forEach((file) => {
     fs.writeFile('data/' + file.name, JSON.stringify(file.data), function (err) {
@@ -84,7 +114,7 @@ function getDestinations(list) {
   let result = '';
   let listCode = [];
   for (let i = 0; i < list.length; i++) {
-    if (!list[i].geo) {
+    if (!list[i].geo.results[0]) {
       console.log(list)
     }
     result = result + list[i].geo.results[0].geometry.location.lat + ', ' + list[i].geo.results[0].geometry.location.lng + ' | ';
@@ -128,7 +158,7 @@ function getDistances(input) {
           console.log('error: ', err.data)
         }
         errFile.push({file: index, list: errChild});
-        saveData([{name: 'distances/' + item.code + '.json', data: result}]);
+        saveData([{name: 'distances_update/' + item.code + '.json', data: result}]);
       })
     }, timeout * i)
   }
@@ -138,14 +168,14 @@ function checkErrReq() {
   let length = data2.length;
   for (let i = 0; i < length; i++) {
     setTimeout(function () {
-      let distance = require('./data/distances/' + i + '.json');
+      let distance = require('./data/distances_modify/' + i + '.json');
       let result = [];
       async.each(distance, function (item, callback) {
         if (item.status === 'OVER_QUERY_LIMIT') {
           axios.get(item.url).then((res) => {
             if (res.data.status !== 'OK') {
               res.data.url = item.url;
-              console.log('errors');
+              res.data.code = item.code;
               result.push(res.data)
             }
             else {
@@ -164,7 +194,7 @@ function checkErrReq() {
         result.forEach(function (item) {
           console.log(item.status)
         });
-        saveData([{name: '/distances_edit/' + i + '.json', data: result}])
+        saveData([{name: '/distances_modify/' + i + '.json', data: result}])
       })
     }, timeout * i)
   }
@@ -174,7 +204,7 @@ function modifyDistanceData() {
   let length = data2.length;
   console.log(length)
   for (let i = 0; i < length; i++) {
-    let distance = require('./data/distances_edit/' + i + '.json');
+    let distance = require('./data/distances_modify/' + i + '.json');
     let result = {
       origin: distance[0].origin_addresses[0],
       code: i
@@ -196,7 +226,7 @@ function modifyDistanceData() {
     }
     result.elements = elements;
     // console.log(result)
-    saveData([{name: '/distances_raw2/' + i + '.json', data: result}])
+    saveData([{name: '/distances_raw3/' + i + '.json', data: result}])
   }
 }
 
@@ -208,12 +238,15 @@ function getDistancesToFinal() {
       if (res.data.status === 'OK') {
         item.element = res.data;
         item.code = index;
+        item.count = Number(item.count);
         callback();
       }
       else {
+        console.log('err');
         res.data.url = url;
         item.element = res.data;
         item.code = index;
+        item.count = Number(item.count);
         callback();
       }
     })
