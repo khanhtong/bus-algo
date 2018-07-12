@@ -3,12 +3,15 @@ const perf = require('execution-time')();
 const Json2csvParser = require('json2csv').Parser;
 const _ = require('lodash');
 const data = require('./data/finalData.json');
-const buses = [29, 16, 7];
-const maxTime = 3600;
-const bufferTime = 1;
-const timeForPickup = 60;
-const largeTime = 1.5;
+const buses = [29, 16, 7]; // danh sach cac loai xe su dung
+const maxTime = 3600; // thoi gian toi da cua 1 xe
+const bufferTime = 1.2; // thoi gian buffer khoang cach tinh bang google map
+const timeForPickup = 60; // thoi gian dung lai de don hoc sinh
+const largeTime = 1.5; // khoang cach toi da cua 1 diem khi di thang so voi di tuyen
 const minTime = 1200;
+let timeToArrived2 = '7h20';
+let timeToArrived = '7h40';
+const timeBetweenEachArrived = 5;
 
 function checkCondition(route, place, nextDistance) {
   // kiem tra thoi gian tong < thoi gian yeu cau
@@ -165,14 +168,10 @@ function main() {
         breakPoint = true;
       }
     }
-    if (route.count <= buses[0]) {
-      route.type = 0;
-    }
-    if (route.count <= buses[1]) {
-      route.type = 1;
-    }
-    if (route.count <= buses[2]) {
-      route.type = 2;
+    for (let i = 0; i < buses.length; i++) {
+      if (route.count <= buses[i]) {
+        route.type = i;
+      }
     }
     route.bus = buses[route.type] - route.count;
     let lastItem = _.last(route.element);
@@ -204,8 +203,13 @@ function main() {
   }
   // count number of bus
   for (let i = 0; i < output.length; i++) {
-    resBus[output[i].type].count ++;
+    resBus[output[i].type].count++;
   }
+  output = _.sortBy(output, [function (o) {
+    return o.duration;
+  }]);
+  setTime(output);
+  console.log(JSON.stringify(output));
   // format data to export excel
   for (let i = 0; i < output.length; i++) {
     for (let j = 0; j < output[i].child.length; j++) {
@@ -223,10 +227,6 @@ function main() {
     }
   }
 
-  output = _.sortBy(output, [function (o) {
-    return o.duration;
-  }])
-
   console.log(resBus);
   console.log(JSON.stringify(output));
   console.log('Number of bus: ', output.length);
@@ -236,7 +236,58 @@ function main() {
 }
 
 function setTime(output) {
+  // format time;
+  timeToArrived = timeToArrived.split('h');
+  timeToArrived2 = timeToArrived2.split('h');
+  timeToArrived[0] = Number(timeToArrived[0]);
+  timeToArrived[1] = Number(timeToArrived[1]);
+  timeToArrived2[0] = Number(timeToArrived2[0]);
+  timeToArrived2[1] = Number(timeToArrived2[1]);
+  let totalTimeArrived = timeToArrived[0] * 60 + timeToArrived[1] - timeToArrived2[0] * 60 - timeToArrived2[1];
 
+  // set time arrived for each bus
+  let numberOfTurn = totalTimeArrived / timeBetweenEachArrived + 1;
+  let numberOfBusPerTurn = Math.floor(output.length / numberOfTurn);
+  let tmp = 0;
+  let timePlus = 0;
+  for (let j = output.length - 1; j >= 0; j--) {
+    let route = output[j];
+    if (tmp < numberOfBusPerTurn) {
+      tmp++;
+    }
+    else {
+      tmp = 0;
+      timePlus += timeBetweenEachArrived;
+    }
+    let arrivedTime = calTime(timeToArrived2, timePlus);
+    route.arrivedTime = arrivedTime;
+    // set time for each place of a bus
+    for (let k = 0; k < route.element.length; k++) {
+      let element = route.element[k];
+      let rs = element.bufferDuration / 60; // thoi gian di tu diem toi truong theo minutes
+      if (k === route.element.length -1) {
+        rs = element.durationToScore / 60
+      }
+      let tmpTime = calTime(route.arrivedTime, 0-rs);
+      element.timeStart = tmpTime[0] + 'h' + tmpTime[1];
+    }
+
+  }
+}
+
+function calTime(a, b) {
+  let m = a[1] + b;
+  let h = a[0];
+  if (m > 60) {
+    m = m % 60;
+    h += Math.floor(m / 60);
+  }
+  if (m < 0) {
+    m = 60 + (m % 60);
+    h = h + Math.floor(m/60) - 1;
+  }
+
+  return [h, Math.floor(m)];
 }
 
 function exportCsv(output) {
